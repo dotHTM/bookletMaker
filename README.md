@@ -35,7 +35,7 @@ Direction   ↑   2      15   ↓               ↑   18     31   ↓
 
 Because the top and bottom sides of these sheets are reversed in reading direction respective to eachother, we need to reverse half, either the evens or the odds.
 
-Keeping a list of duplexed sheets, each page will appear in this order to assemble the signature:
+Keeping a list of duplexed sheets, each page will appear in this order to assemble the first signature:
 
 | Left | Right |
 |------|-------|
