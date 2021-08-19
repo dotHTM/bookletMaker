@@ -52,7 +52,7 @@ def signatureBreaker(sequence, blankValue, maxsheets, minSheets=None):
     blankCount = len(list(filter(lambda x: x == blankValue, flat_result)))
 
     return {
-        'result': result,
+        'signatures': result,
         'flat_result': flat_result,
         'blankCount': blankCount,
         'signatureCount': len(result),
@@ -78,14 +78,14 @@ def minimalBlanksBreaker(sequence, blankValue, maxsheets=6, minSheets=2):
         for y in yl:
             testBlanks = signatureBreaker(sequence, blankValue, x, minSheets=y)
 
-            if not minBlanks or testBlanks['blankCount'] < minBlanks['blankCount']:
+            if not minBlanks or testBlanks['blankCount'] < minBlanks[
+                    'blankCount']:
                 minBlanks = testBlanks
                 minBlanksList = []
 
             if testBlanks['blankCount'] == minBlanks['blankCount']:
-                print([x, y])
+                DEBUG.msg([x, y])
                 minBlanksList.append(testBlanks)
-
 
     return minBlanksList
 
@@ -132,7 +132,7 @@ def write_single_page_spread_data(orderedPages,
                                   filename,
                                   template=lambda x: x):
     flatPages = orderedPages['flat_result']
-    result = [['a', 'pa', 'b', 'pb']]
+    result = [['imageA', 'pageNumbA', 'imageB', 'pageNumbB']]
     row = []
 
     for somePage in flatPages:
@@ -151,29 +151,143 @@ def write_single_page_spread_data(orderedPages,
             writer.writerow(r)
 
 
+def dict_breakLines(inputDict):
+    result = []
+    for x in inputDict:
+        result.append(f'  {x} : {inputDict[x]}')
+    return "\n".join(result)
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+#
+#                                  88
+#                                  ""
+#
+#    88,dPYba,,adPYba,  ,adPPYYba, 88 8b,dPPYba,
+#    88P'   "88"    "8a ""     `Y8 88 88P'   `"8a
+#    88      88      88 ,adPPPPP88 88 88       88
+#    88      88      88 88,    ,88 88 88       88
+#    88      88      88 `"8bbdP"Y8 88 88       88
+#
+#
+
+
+class BoolMsg():
+    def __init__(self, value):
+        self.value = value
+
+    def msg(self, message):
+        if self.value:
+            print(message)
+
+    def set(self, newValue):
+        self.value = newValue
+
+    def get(self):
+        return self.value
+
+
+DEBUG = BoolMsg(False)
+VERBOSE = BoolMsg(False)
+
+
 def main():
+    import argparse
 
-    start = 0
-    end = 37
+    parser = argparse.ArgumentParser(
+        description=
+        'Order pages for booklet signatures and optionally generate data file for merge with a layout application.'
+    )
 
-    pageList = range(start, end)
+    parser.add_argument(
+        'pages',
+        metavar='<page>',
+        type=str,
+        nargs='*',
+        help='Pages for ordering. Can be integers, file names, or file paths.')
 
-    template = lambda p: f"pages/impose_{p}.svg"
+    parser.add_argument(
+        '--out-csv',
+        '-o',
+        metavar='<path to output file>',
+        dest='outputPath',
+        action='store',
+        type=str,
+        help=
+        'Output a CSV file in the four-column format: imageA,pageNumbA,imageB,pageNumbB'
+    )
+
+    parser.add_argument(
+        '--prefix',
+        metavar="<substring>",
+        action="store",
+        type=str,
+        default='',
+        help="The prefix for the filename. Usually path and file prefix.")
+    parser.add_argument(
+        '--suffix',
+        metavar="<substring>",
+        action="store",
+        type=str,
+        default='',
+        help="The suffix for the filename. Usually file extention.")
+
+    parser.add_argument('--optimize',
+                        action='store_true',
+                        help='Optimize signatures for minimal blank page insertions.')
+    parser.add_argument('--print',
+                        '-p',
+                        action='store_true',
+                        help='Print object of result')
+
+    parser.add_argument('--debug',
+                        '-d',
+                        dest='debug',
+                        action='store_true',
+                        help='Enable Debugging messages.')
+    parser.add_argument('--verbose',
+                        '-v',
+                        dest='verbose',
+                        action='store_true',
+                        help='Enable Debugging messages.')
+
+    args = parser.parse_args()
+
+    DEBUG.set(args.debug)
+    VERBOSE.set(args.verbose)
+
+    template = lambda p: f"{args.prefix}{p}{args.suffix}"
     blankValue = ''
+    
+    DEBUG.msg({
+        'DEBUG': DEBUG.get(),
+        'VERBOSE': VERBOSE.get(),
+        'prefix': args.prefix,
+        'suffix': args.suffix,
+        'print': args.print,
+        'pages': args.pages,
+        'outputPath': args.outputPath,
+        'template' : template("{#}"),
 
-    outputCSVFile = '../impose/impose.csv'
+    })
 
-    # orderedPages = signatureBreaker(pageList, blankValue, 4, 8)
+    def errorHelp(message):
+        print(f"ERROR: {message}")
+        parser.print_help()
+        exit(2)
 
-    orderedPages = minimalBlanksBreaker(pageList, blankValue)
-    import json
+    solution = None
+    
+    if args.optimize:
+        solution = minimalBlanksBreaker(args.pages, '')[0]
+    else:
+        solution = signatureBreaker(args.pages, '', 4, 8)
 
-    print(
-        json.dumps(sliceDictList(
-            orderedPages, ['result', 'blankCount', 'signatureSizes', 'signatureCount']),
-                   sort_keys=True,
-                   indent=4))
-    # write_single_page_spread_data(orderedPages, outputCSVFile, template)
+    if args.print:
+        print(solution)
+    
+    if args.outputPath:
+        write_single_page_spread_data(solution, args.outputPath, template)
 
 
 if __name__ == '__main__':
