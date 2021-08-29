@@ -3,6 +3,7 @@
 
 import math
 import csv
+import json
 
 
 def sliceDict(someDict, keylist):
@@ -17,87 +18,135 @@ def sliceDictList(someDictList, keylist):
     return list(map(lambda x: sliceDict(x, keylist), someDictList))
 
 
-def signatureBreaker(sequence, blankValue, maxsheets, minSheets=None):
+def flatten_listList(listList):
+    tmp = []
+    for x in listList:
+        tmp.extend(x)
+    return tmp
+
+
+def sliceDict(inputDict, indexList):
+    tmp = {}
+    for i in indexList:
+        if i in inputDict:
+            tmp[i] = inputDict[i]
+        else:
+            tmp[i] = None
+    return tmp
+
+
+def signatureBreaker(
+    sequence,
+    blankValue,
+    maxSheets,
+    minSheets=None,
+    startNumber=1,
+):
     if minSheets == None:
-        minSheets = maxsheets
-    if maxsheets < minSheets:
-        s = [maxsheets, minSheets]
+        minSheets = maxSheets
+    if maxSheets < minSheets:
+        s = [maxSheets, minSheets]
         s.reverse()
-        [maxsheets, minSheets] = s
+        [maxSheets, minSheets] = s
 
-    maxPages = maxsheets * 4
-    ssc = 0
+    maxPages = maxSheets * 4
+    pagesAppended = 0
+    sn_offset = pagesAppended
 
-    result = []
-    rapp_sb = lambda subseq: result.append(signatureBuilder(
-        subseq, blankValue))
+    signatures = []
+    rapp_sb = lambda r, subseq, startNumber: r.append(
+        signatureBuilder(subseq, blankValue, startNumber))
 
     wcSignature = []
     for i in sequence:
-        ssc += 1
         wcSignature.append(i)
-        if ssc % maxPages == 0:
-            rapp_sb(wcSignature)
+        pagesAppended += 1
+        if pagesAppended % maxPages == 0:
+            rapp_sb(signatures, wcSignature, startNumber + sn_offset)
             wcSignature = []
+            sn_offset = pagesAppended
 
     while 0 < len(wcSignature) and len(wcSignature) < minSheets * 4:
-        wcSignature.append(blankValue)
+        wcSignature.append(page(blankValue, ''))
+        pagesAppended += 1
 
-    rapp_sb(wcSignature)
+    if 0 < len(wcSignature):
+        rapp_sb(signatures, wcSignature, startNumber + sn_offset)
 
-    flat_result = []
-    for x in result:
-        flat_result.extend(x)
+    flat_signatures = flatten_listList(signatures)
 
-    blankCount = len(list(filter(lambda x: x == blankValue, flat_result)))
+    blankCount = len(
+        list(filter(lambda x: x['page'] == blankValue, flat_signatures)))
 
     return {
-        'signatures': result,
-        'flat_result': flat_result,
+        'signatures': signatures,
+        'flat_signatures': flat_signatures,
         'blankCount': blankCount,
-        'signatureCount': len(result),
-        'signatureSizes': list(map(lambda x: int(len(x) / 4), result))
+        'signatureCount': len(signatures),
+        'signatureSizes': list(map(lambda x: int(len(x) / 4), signatures))
     }
 
 
-def minimalBlanksBreaker(sequence, blankValue, maxsheets=6, minSheets=2):
+def minimalBlanksBreaker(sequence,
+                         blankValue,
+                         maxSheets=6,
+                         minSheets=2,
+                         startNumber=1):
     if minSheets == None:
-        minSheets = maxsheets
-    if maxsheets < minSheets:
-        s = [maxsheets, minSheets]
+        minSheets = maxSheets
+    if maxSheets < minSheets:
+        s = [maxSheets, minSheets]
         s.reverse()
-        [maxsheets, minSheets] = s
+        [maxSheets, minSheets] = s
 
     minBlanks = None
     minBlanksList = []
-    xl = list(range(minSheets, maxsheets))
+    seenSizes = {}
+    xl = list(range(minSheets, maxSheets))
     xl.reverse()
     for x in xl:
         yl = list(range(minSheets, x))
         yl.reverse()
         for y in yl:
-            testBlanks = signatureBreaker(sequence, blankValue, x, minSheets=y)
+            testBlanks = signatureBreaker(sequence,
+                                          blankValue,
+                                          x,
+                                          minSheets=y,
+                                          startNumber=startNumber)
 
             if not minBlanks or testBlanks['blankCount'] < minBlanks[
                     'blankCount']:
                 minBlanks = testBlanks
                 minBlanksList = []
+                seenSizes = {}
 
             if testBlanks['blankCount'] == minBlanks['blankCount']:
                 DEBUG.msg([x, y])
-                minBlanksList.append(testBlanks)
+                sizeStr = str(testBlanks['signatureSizes'])
+                if not sizeStr in seenSizes:
+                    minBlanksList.append(testBlanks)
+                    seenSizes[sizeStr] = 1
+
+    for mb in minBlanksList:
+        VERBOSE.msg(
+            json.dumps(sliceDict(mb, [
+                'blankCount',
+                'signatureCount',
+                'signatureSizes',
+            ]),
+                       indent=2))
 
     return minBlanksList
 
 
-def signatureBuilder(sequence, blankValue):
+def signatureBuilder(sequence, blankValue, startNumber):
     start = 0
     length = len(sequence)
     missingLength = math.ceil(length / 4) * 4 - length
     turnAroundIndex = math.ceil(length / 4) * 2
 
     for x in range(0, missingLength):
-        sequence.append(blankValue)
+        sequence.append(page(blankValue, ''))
 
     pages = []
     walk = 0
@@ -131,13 +180,15 @@ def signatureBuilder(sequence, blankValue):
 def write_single_page_spread_data(orderedPages,
                                   filename,
                                   template=lambda x: x):
-    flatPages = orderedPages['flat_result']
+    flatPages = orderedPages['flat_signatures']
     result = [['imageA', 'pageNumbA', 'imageB', 'pageNumbB']]
     row = []
 
     for somePage in flatPages:
-        row.append(template(somePage))
-        row.append(somePage)
+        if 'page' in somePage and 'number' in somePage:
+            row.append(template(somePage['page']))
+            row.append(somePage['number'])
+
         if len(row) >= 4:
             result.append(row)
             row = []
@@ -149,6 +200,19 @@ def write_single_page_spread_data(orderedPages,
                             quoting=csv.QUOTE_MINIMAL)
         for r in result:
             writer.writerow(r)
+
+
+def page(value, number):
+    return {'page': value, 'number': number}
+
+
+def numberNaiveSequence(inputList, startNumber=1):
+    step = startNumber
+    r = []
+    for e in inputList:
+        r.append(page(e, step))
+        step += 1
+    return r
 
 
 def dict_breakLines(inputDict):
@@ -232,9 +296,47 @@ def main():
         default='',
         help="The suffix for the filename. Usually file extention.")
 
-    parser.add_argument('--optimize',
-                        action='store_true',
-                        help='Optimize signatures for minimal blank page insertions.')
+    parser.add_argument('--signature-size',
+                        '-s',
+                        '--smax',
+                        metavar="<integer>",
+                        action="store",
+                        dest="signatureSize",
+                        type=int,
+                        help="Maximum size of the signatures.")
+
+    parser.add_argument(
+        '--signature-size-min',
+        '--smin',
+        metavar="<integer>",
+        action="store",
+        dest="signatureMinSize",
+        type=int,
+        help=
+        "Minimum size of the signatures. If not defined, will be the same as the maximum size."
+    )
+
+    parser.add_argument(
+        '--start-number',
+        '--sn',
+        metavar="<integer>",
+        action="store",
+        dest="startNumber",
+        type=int,
+        default=1,
+        help=
+        "The number the first page image should be numbered with. Default is 1."
+    )
+
+    parser.add_argument(
+        '--minimal-blanks',
+        action='store_true',
+        dest='minimalBlanks',
+        default=False,
+        help=
+        'Optimize signatures for minimal blank page insertions. Overides maximum and minimum signature size values.'
+    )
+
     parser.add_argument('--print',
                         '-p',
                         action='store_true',
@@ -258,17 +360,19 @@ def main():
 
     template = lambda p: f"{args.prefix}{p}{args.suffix}"
     blankValue = ''
-    
+
+    # args.startNumber
+
     DEBUG.msg({
         'DEBUG': DEBUG.get(),
         'VERBOSE': VERBOSE.get(),
         'prefix': args.prefix,
         'suffix': args.suffix,
+        'startNumber': args.startNumber,
         'print': args.print,
         'pages': args.pages,
         'outputPath': args.outputPath,
-        'template' : template("{#}"),
-
+        'template': template("{#}"),
     })
 
     def errorHelp(message):
@@ -277,15 +381,24 @@ def main():
         exit(2)
 
     solution = None
-    
-    if args.optimize:
-        solution = minimalBlanksBreaker(args.pages, '')[0]
+
+    pagesNumbered = numberNaiveSequence(args.pages, args.startNumber)
+
+    if args.minimalBlanks:
+        solution = minimalBlanksBreaker(pagesNumbered, '')[0]
+    elif args.signatureSize:
+        if args.signatureMinSize:
+            solution = signatureBreaker(pagesNumbered, '', args.signatureSize,
+                                        args.signatureMinSize)
+        else:
+            solution = signatureBreaker(pagesNumbered, '', args.signatureSize,
+                                        args.signatureSize)
     else:
-        solution = signatureBreaker(args.pages, '', 4, 8)
+        solution = signatureBreaker(pagesNumbered, '', 2, 4)
 
     if args.print:
         print(solution)
-    
+
     if args.outputPath:
         write_single_page_spread_data(solution, args.outputPath, template)
 
