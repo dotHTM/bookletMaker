@@ -2,7 +2,7 @@
 
 A tool for ordering pages for printing varied signatures for printing and binding books.
 
-
+For a sample project that consumes the output file of this tool, look to this [bookletExample](https://github.com/dotHTM/bookletExample).
 
 ## Signature Building by Hand
 
